@@ -18,7 +18,7 @@ func Log(gameName string, payload interface{}) error {
 	}
 	b, err := json.Marshal(map[string]interface{}{
 		"game_name": gameName,
-		"payload":   p,
+		"payload":   string(p),
 	})
 	if err != nil {
 		return err
