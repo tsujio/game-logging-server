@@ -12,13 +12,9 @@ const (
 )
 
 func Log(gameName string, payload interface{}) error {
-	p, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
 	b, err := json.Marshal(map[string]interface{}{
 		"game_name": gameName,
-		"payload":   string(p),
+		"payload":   payload,
 	})
 	if err != nil {
 		return err
