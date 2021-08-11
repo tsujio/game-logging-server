@@ -35,3 +35,7 @@ func Log(gameName string, payload interface{}) error {
 
 	return nil
 }
+
+func LogAsync(gameName string, payload interface{}) {
+	go Log(gameName, payload)
+}
