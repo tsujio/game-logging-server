@@ -11,7 +11,21 @@ const (
 	endpoint = "https://game-logging-server.tsujio.org/log"
 )
 
+var disabled = false
+
+func Enable() {
+	disabled = false
+}
+
+func Disable() {
+	disabled = true
+}
+
 func Log(gameName string, payload interface{}) error {
+	if disabled {
+		return nil
+	}
+
 	b, err := json.Marshal(map[string]interface{}{
 		"game_name": gameName,
 		"payload":   payload,
