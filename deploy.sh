@@ -19,7 +19,7 @@ docker push gcr.io/$PROJECT/game-logging-server || exit 1
 cat <<EOS | tr '\n' ',' | sed -e 's/,$//' > env.txt
 DB_USER=root
 DB_PASSWORD=$DB_PASSWORD
-DB_HOST=/cloudsql/$PROJECT:asia-northeast1:game-logging-server
+DB_HOST=/cloudsql/$PROJECT:us-central1:game-logging-server2
 DB_NAME=game_logging_server
 MIGRATIONS_DIR=/work/migrations
 HOST=0.0.0.0
@@ -30,7 +30,7 @@ gcloud run deploy \
     --image=gcr.io/$PROJECT/game-logging-server:latest \
     --allow-unauthenticated \
     --set-env-vars=`cat env.txt` \
-    --set-cloudsql-instances=$PROJECT:asia-northeast1:game-logging-server \
+    --set-cloudsql-instances=$PROJECT:us-central1:game-logging-server2 \
     --platform=managed \
     --region=asia-northeast1 \
     --project=$PROJECT \
