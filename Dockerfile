@@ -14,6 +14,5 @@ FROM gcr.io/distroless/base
 
 WORKDIR /work
 COPY --from=build /app ./app
-COPY migrations migrations/
 
 ENTRYPOINT ["./app"]

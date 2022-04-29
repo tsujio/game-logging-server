@@ -13,10 +13,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"golang.org/x/xerrors"
-	"gorm.io/gorm"
+
+	"github.com/tsujio/game-logging-server/storages"
 )
 
-func appendLog(w http.ResponseWriter, r *http.Request) {
+func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage) {
 	type Input struct {
 		GameName string                 `json:"game_name"`
 		Payload  map[string]interface{} `json:"payload"`
@@ -39,19 +40,20 @@ func appendLog(w http.ResponseWriter, r *http.Request) {
 
 	remoteAddr := r.Header.Get("X-Forwarded-For")
 
-	payload, err := json.Marshal(&input.Payload)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to encode payload"})
-		return
+	content := struct {
+		ServerTimestamp time.Time   `json:"serverTimestamp"`
+		RemoteAddr      string      `json:"remoteAddr"`
+		GameName        string      `json:"gameName"`
+		Payload         interface{} `json:"payload"`
+	}{
+		ServerTimestamp: time.Now().UTC(),
+		RemoteAddr:      remoteAddr,
+		GameName:        input.GameName,
+		Payload:         input.Payload,
 	}
 
 	// Insert log
-	db := r.Context().Value("db").(*gorm.DB)
-	err = db.Exec(`
-	INSERT INTO game_logs(server_timestamp, remote_addr, game_name, payload) VALUES (?, ?, ?, ?)
-	`, time.Now().UTC(), remoteAddr, input.GameName, string(payload)).Error
-	if err != nil {
+	if err := storage.InsertLog(context.Background(), content.GameName, content.ServerTimestamp, content); err != nil {
 		log.Printf("Failed to insert log: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to insert log"})
@@ -59,18 +61,19 @@ func appendLog(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func run(host string, port int, db *gorm.DB) error {
+func run(host string, port int, storage storages.Storage) error {
 	router := mux.NewRouter().StrictSlash(true)
 
 	router.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), "db", db)
-		r = r.WithContext(ctx)
-		appendLog(w, r)
+		appendLog(w, r, storage)
 	}).Methods(http.MethodPost)
 
 	handler := cors.AllowAll().Handler(router)
 
 	addr := fmt.Sprintf("%s:%d", host, port)
+
+	log.Printf("Running on %s\n", addr)
+
 	err := http.ListenAndServe(addr, handler)
 	if err != nil {
 		return xerrors.Errorf("Failed to start api: %w", err)
@@ -80,31 +83,11 @@ func run(host string, port int, db *gorm.DB) error {
 }
 
 func main() {
-	// Set up db
-	dbUser := os.Getenv("DB_USER")
-	dbPassword := os.Getenv("DB_PASSWORD")
-	dbPort, _ := strconv.Atoi(os.Getenv("DB_PORT"))
-	dbHost := os.Getenv("DB_HOST")
-	dbName := os.Getenv("DB_NAME")
-	dbConfig := &DBConfig{
-		User:     dbUser,
-		Password: dbPassword,
-		Host:     dbHost,
-		Port:     dbPort,
-		DBName:   dbName,
-	}
-	migrationsDir := os.Getenv("MIGRATIONS_DIR")
-	if migrationsDir == "" {
-		migrationsDir = "migrations"
-	}
-	err := SetupDB(dbConfig, migrationsDir)
+	storage, err := storages.New(os.Getenv("BUCKET"))
 	if err != nil {
-		log.Fatalf("Failed to set up db: %+v", err)
+		log.Fatalf("Failed to create storage client: %+v", err)
 	}
-	db, err := OpenDB(dbConfig)
-	if err != nil {
-		log.Fatalf("Failed to open db: %+v", err)
-	}
+	defer storage.Close()
 
 	host := os.Getenv("HOST")
 	port, err := strconv.Atoi(os.Getenv("PORT"))
@@ -112,7 +95,7 @@ func main() {
 		port = 8000
 	}
 
-	err = run(host, port, db)
+	err = run(host, port, storage)
 	if err != nil {
 		log.Fatalf("Failed to run api: %+v", err)
 	}
