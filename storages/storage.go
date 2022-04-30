@@ -45,7 +45,7 @@ func (s *storage) InsertLog(ctx context.Context, gameName string, timestamp time
 		return fmt.Errorf("Failed to generate uuid: %w", err)
 	}
 	key := fmt.Sprintf(
-		"game=%s/dt=%s/%s.json",
+		"logs/game=%s/dt=%s/%s.json",
 		gameName,
 		timestamp.Format("2006-01-02"),
 		id.String(),

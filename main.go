@@ -40,16 +40,24 @@ func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage)
 
 	remoteAddr := r.Header.Get("X-Forwarded-For")
 
+	payloadJSON, err := json.Marshal(input.Payload)
+	if err != nil {
+		log.Printf("Failed to encode payload as json: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to encode log payload"})
+		return
+	}
+
 	content := struct {
-		ServerTimestamp time.Time   `json:"serverTimestamp"`
-		RemoteAddr      string      `json:"remoteAddr"`
-		GameName        string      `json:"gameName"`
-		Payload         interface{} `json:"payload"`
+		ServerTimestamp time.Time `json:"serverTimestamp"`
+		RemoteAddr      string    `json:"remoteAddr"`
+		GameName        string    `json:"gameName"`
+		PayloadJSON     string    `json:"payloadJson"`
 	}{
 		ServerTimestamp: time.Now().UTC(),
 		RemoteAddr:      remoteAddr,
 		GameName:        input.GameName,
-		Payload:         input.Payload,
+		PayloadJSON:     string(payloadJSON),
 	}
 
 	// Insert log
