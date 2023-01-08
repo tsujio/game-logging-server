@@ -13,6 +13,7 @@ import (
 )
 
 type Storage interface {
+	GetGameSecret(ctx context.Context, gameName string) (string, error)
 	InsertLog(ctx context.Context, gameName string, timestamp time.Time, content interface{}) error
 	RegisterScore(ctx context.Context, score *GameScore) error
 	GetScoreList(ctx context.Context, gameName string) ([]GameScore, error)
@@ -56,6 +57,34 @@ func New(projectID string, bucket string) (Storage, error) {
 		firestoreClient: firestoreClient,
 		bucket:          bucket,
 	}, nil
+}
+
+func (s *storage) GetGameSecret(ctx context.Context, gameName string) (string, error) {
+	docs, err := s.firestoreClient.Collection("games").
+		Where("gameName", "==", gameName).
+		Documents(ctx).
+		GetAll()
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(docs) == 0 {
+		return "", fmt.Errorf("Game not found: %s", gameName)
+	}
+
+	data := docs[0].Data()
+
+	secretValue, exists := data["secret"]
+	if !exists {
+		return "", nil
+	}
+	secret, ok := secretValue.(string)
+	if !ok {
+		return "", nil
+	}
+
+	return secret, nil
 }
 
 func (s *storage) InsertLog(ctx context.Context, gameName string, timestamp time.Time, content interface{}) error {

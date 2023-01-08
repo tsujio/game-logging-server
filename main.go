@@ -1,13 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -17,6 +23,32 @@ import (
 
 	"github.com/tsujio/game-logging-server/storages"
 )
+
+func verifySignature(gameName string, body []byte, r *http.Request, storage storages.Storage) error {
+	signatureStr := r.Header.Get("Authorization")
+	signatureStr = strings.TrimPrefix(signatureStr, "Bearer ")
+	signature, err := hex.DecodeString(signatureStr)
+	if err != nil {
+		return err
+	}
+
+	secret, err := storage.GetGameSecret(context.Background(), gameName)
+	if err != nil {
+		return err
+	}
+
+	h := hmac.New(sha256.New, []byte(secret))
+	if _, err := h.Write(body); err != nil {
+		return err
+	}
+	sig := h.Sum(nil)
+
+	if !bytes.Equal(signature, sig) {
+		return fmt.Errorf("Invalid signature")
+	}
+
+	return nil
+}
 
 type AppendLogInput struct {
 	GameName string                 `json:"game_name"`
@@ -77,9 +109,15 @@ type RegisterScoreInput struct {
 }
 
 func registerScore(w http.ResponseWriter, r *http.Request, storage storages.Storage) {
-	var input RegisterScoreInput
-	err := json.NewDecoder(r.Body).Decode(&input)
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to read request body"})
+		return
+	}
+
+	var input RegisterScoreInput
+	if err := json.Unmarshal(body, &input); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to decode request body"})
 		return
@@ -89,6 +127,13 @@ func registerScore(w http.ResponseWriter, r *http.Request, storage storages.Stor
 	if input.GameName == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Missing game_name"})
+		return
+	}
+
+	if err := verifySignature(input.GameName, body, r, storage); err != nil {
+		log.Printf("Failed to verify signature: %v", err)
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Invalid signature"})
 		return
 	}
 
