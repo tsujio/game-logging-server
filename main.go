@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"cloud.google.com/go/compute/metadata"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"golang.org/x/xerrors"
@@ -17,13 +18,13 @@ import (
 	"github.com/tsujio/game-logging-server/storages"
 )
 
-func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage) {
-	type Input struct {
-		GameName string                 `json:"game_name"`
-		Payload  map[string]interface{} `json:"payload"`
-	}
+type AppendLogInput struct {
+	GameName string                 `json:"game_name"`
+	Payload  map[string]interface{} `json:"payload"`
+}
 
-	var input Input
+func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage) {
+	var input AppendLogInput
 	err := json.NewDecoder(r.Body).Decode(&input)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -69,12 +70,107 @@ func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage)
 	}
 }
 
+type RegisterScoreInput struct {
+	GameName string `json:"game_name"`
+	PlayerID string `json:"player_id"`
+	Score    int    `json:"score"`
+}
+
+func registerScore(w http.ResponseWriter, r *http.Request, storage storages.Storage) {
+	var input RegisterScoreInput
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to decode request body"})
+		return
+	}
+
+	// Validation
+	if input.GameName == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Missing game_name"})
+		return
+	}
+
+	// Register
+	score := &storages.GameScore{
+		GameName:  input.GameName,
+		Timestamp: time.Now().UTC(),
+		PlayerID:  input.PlayerID,
+		Score:     input.Score,
+	}
+	if err := storage.RegisterScore(context.Background(), score); err != nil {
+		log.Printf("Failed to register score: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to register score"})
+		return
+	}
+}
+
+type Score struct {
+	GameName  string    `json:"game_name"`
+	Timestamp time.Time `json:"timestamp"`
+	PlayerID  string    `json:"player_id"`
+	Score     int       `json:"score"`
+}
+
+type GetScoreOutput struct {
+	Scores []Score `json:"scores"`
+}
+
+func getScore(w http.ResponseWriter, r *http.Request, storage storages.Storage) {
+	params := r.URL.Query()
+
+	gameName := params.Get("game_name")
+	if gameName == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Missing game_name"})
+		return
+	}
+
+	scores, err := storage.GetScoreList(context.Background(), gameName)
+	if err != nil {
+		log.Printf("Failed to get scores: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to get scores"})
+		return
+	}
+
+	outputScores := []Score{}
+	for _, s := range scores {
+		outputScores = append(outputScores, Score{
+			GameName:  s.GameName,
+			Timestamp: s.Timestamp,
+			PlayerID:  s.PlayerID,
+			Score:     s.Score,
+		})
+	}
+	output := GetScoreOutput{
+		Scores: outputScores,
+	}
+
+	if err := json.NewEncoder(w).Encode(&output); err != nil {
+		log.Printf("Failed to encode output: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to encode output"})
+		return
+	}
+}
+
 func run(host string, port int, storage storages.Storage) error {
 	router := mux.NewRouter().StrictSlash(true)
 
 	router.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
 		appendLog(w, r, storage)
 	}).Methods(http.MethodPost)
+
+	router.HandleFunc("/score", func(w http.ResponseWriter, r *http.Request) {
+		registerScore(w, r, storage)
+	}).Methods(http.MethodPost)
+
+	router.HandleFunc("/score", func(w http.ResponseWriter, r *http.Request) {
+		getScore(w, r, storage)
+	}).Methods(http.MethodGet)
 
 	handler := cors.AllowAll().Handler(router)
 
@@ -91,7 +187,16 @@ func run(host string, port int, storage storages.Storage) error {
 }
 
 func main() {
-	storage, err := storages.New(os.Getenv("BUCKET"))
+	projectID := os.Getenv("PROJECT_ID")
+	if projectID == "" {
+		if pid, err := metadata.ProjectID(); err == nil {
+			projectID = pid
+		}
+	}
+
+	bucket := os.Getenv("BUCKET")
+
+	storage, err := storages.New(projectID, bucket)
 	if err != nil {
 		log.Fatalf("Failed to create storage client: %+v", err)
 	}
