@@ -56,9 +56,15 @@ type AppendLogInput struct {
 }
 
 func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage) {
-	var input AppendLogInput
-	err := json.NewDecoder(r.Body).Decode(&input)
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to read request body"})
+		return
+	}
+
+	var input AppendLogInput
+	if err := json.Unmarshal(body, &input); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Failed to decode request body"})
 		return
@@ -68,6 +74,13 @@ func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage)
 	if input.GameName == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Missing game_name"})
+		return
+	}
+
+	if err := verifySignature(input.GameName, body, r, storage); err != nil {
+		log.Printf("Failed to verify signature: %v", err)
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"message": "Invalid signature"})
 		return
 	}
 
