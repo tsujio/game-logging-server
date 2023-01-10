@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -16,15 +17,23 @@ const (
 )
 
 var _secret string
-var disabled = false
+var _disabled = false
+
+var mu sync.Mutex
 
 func Enable(secret string) {
-	disabled = false
+	mu.Lock()
+	defer mu.Unlock()
+
+	_disabled = false
 	_secret = secret
 }
 
 func Disable() {
-	disabled = true
+	mu.Lock()
+	defer mu.Unlock()
+
+	_disabled = true
 	_secret = ""
 }
 
@@ -37,6 +46,11 @@ func makeSignature(data, key []byte) ([]byte, error) {
 }
 
 func httpPost(path string, body interface{}) error {
+	mu.Lock()
+	disabled := _disabled
+	secret := _secret
+	mu.Unlock()
+
 	if disabled {
 		return nil
 	}
@@ -46,7 +60,7 @@ func httpPost(path string, body interface{}) error {
 		return err
 	}
 
-	sig, err := makeSignature(b, []byte(_secret))
+	sig, err := makeSignature(b, []byte(secret))
 	if err != nil {
 		return err
 	}
