@@ -25,6 +25,7 @@ type GameScore struct {
 	GameName  string    `firestore:"gameName"`
 	Timestamp time.Time `firestore:"timestamp"`
 	PlayerID  string    `firestore:"playerId"`
+	PlayID    string    `firestore:"playId"`
 	Score     int       `firestore:"score"`
 }
 

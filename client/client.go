@@ -95,10 +95,11 @@ func LogAsync(gameName string, payload interface{}) {
 	go Log(gameName, payload)
 }
 
-func RegisterScore(gameName, playerID string, score int) error {
+func RegisterScore(gameName, playerID string, playID string, score int) error {
 	return httpPost("/score", map[string]interface{}{
 		"game_name": gameName,
 		"player_id": playerID,
+		"play_id":   playID,
 		"score":     score,
 	})
 }
@@ -107,6 +108,7 @@ type GameScore struct {
 	GameName  string    `json:"game_name"`
 	Timestamp time.Time `json:"timestamp"`
 	PlayerID  string    `json:"player_id"`
+	PlayID    string    `json:"play_id"`
 	Score     int       `json:"score"`
 }
 

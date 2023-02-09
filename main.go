@@ -118,6 +118,7 @@ func appendLog(w http.ResponseWriter, r *http.Request, storage storages.Storage)
 type RegisterScoreInput struct {
 	GameName string `json:"game_name"`
 	PlayerID string `json:"player_id"`
+	PlayID   string `json:"play_id"`
 	Score    int    `json:"score"`
 }
 
@@ -155,6 +156,7 @@ func registerScore(w http.ResponseWriter, r *http.Request, storage storages.Stor
 		GameName:  input.GameName,
 		Timestamp: time.Now().UTC(),
 		PlayerID:  input.PlayerID,
+		PlayID:    input.PlayID,
 		Score:     input.Score,
 	}
 	if err := storage.RegisterScore(context.Background(), score); err != nil {
@@ -169,6 +171,7 @@ type Score struct {
 	GameName  string    `json:"game_name"`
 	Timestamp time.Time `json:"timestamp"`
 	PlayerID  string    `json:"player_id"`
+	PlayID    string    `json:"play_id"`
 	Score     int       `json:"score"`
 }
 
@@ -200,6 +203,7 @@ func getScore(w http.ResponseWriter, r *http.Request, storage storages.Storage) 
 			GameName:  s.GameName,
 			Timestamp: s.Timestamp,
 			PlayerID:  s.PlayerID,
+			PlayID:    s.PlayID,
 			Score:     s.Score,
 		})
 	}
